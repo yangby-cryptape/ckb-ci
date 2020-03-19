@@ -1,0 +1,246 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR=$(dirname "$0")
+PROJECT_DIR=$(cd "${SCRIPT_DIR}/.."; pwd)
+
+ETC_DIR="${PROJECT_DIR}/etc"
+
+CI_DOCKER="nervosnetwork/ckb-ci:local-env"
+CI_DOCKER_NAME="ckb-ci-docker"
+
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+
+function is_nocolour() {
+    if [ "${CKB_CI_NOCOLOR:-false}" = "true" ]; then
+        printf true
+    else
+        printf false
+    fi
+}
+
+function subcmd_not_found () {
+    local script="${0}"
+    local command="${FUNCNAME[1]#cmd_}"
+    local subcmd="${1}"
+    echo "[Error] unknown sub-command [${subcmd}] for [${command}]: \`${script} ${command} $*\`."
+    exit 1
+}
+
+function cmd_env () {
+    local subcmd="${1}"
+    shift 1
+    local is_existed=$(docker image ls -q ${CI_DOCKER}  | wc -l)
+    local jenkins_home="${PROJECT_DIR}/ci_home"
+    case "${subcmd}" in
+        build )
+            if [ ${is_existed} -gt 0 ]; then
+                echo "[Error] the ci docker [${CI_DOCKER}] is existed."
+                exit 1
+            fi
+            cd "${ETC_DIR}/jenkins/docker"
+            local docker_gid=$(grep -i docker /etc/group | cut -d: -f3)
+            docker build --rm \
+                --build-arg docker_gid=${docker_gid} \
+                -t "${CI_DOCKER}" .
+            ;;
+        remove )
+            docker rmi "${CI_DOCKER}"
+            ;;
+        run )
+            if [ ! -d "${jenkins_home}" ]; then
+                mkdir -p "${jenkins_home}"
+            fi
+            docker run -d --rm \
+                --name "${CI_DOCKER_NAME}" \
+                -h "${CI_DOCKER_NAME}" \
+                -e ANSIBLE_NOCOLOR=true \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -p 0.0.0.0:8080:8080 \
+                -w /mnt/workdir \
+                -v "${PROJECT_DIR}:/mnt/workdir" \
+                -v "${jenkins_home}:/var/jenkins_home" \
+                "${CI_DOCKER}"
+            ;;
+        stop )
+            docker stop "${CI_DOCKER_NAME}"
+            ;;
+        entry )
+            docker exec -it "${CI_DOCKER_NAME}" /bin/bash
+            ;;
+        init-pwd )
+            cat "${jenkins_home}/secrets/initialAdminPassword"
+            ;;
+        shell )
+            docker run -it --rm \
+                --name "${CI_DOCKER_NAME}" \
+                -h "${CI_DOCKER_NAME}" \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                -p 0.0.0.0:8080:8080 \
+                -w /mnt/workdir \
+                -v "${PROJECT_DIR}:/mnt/workdir" \
+                -v "${jenkins_home}:/var/jenkins_home" \
+                --entrypoint /bin/bash \
+                "${CI_DOCKER}"
+            ;;
+        * )
+            subcmd_not_found "${subcmd}" "$@"
+            ;;
+    esac
+}
+
+function cmd_jks () {
+    local subcmd="${1}"
+    shift 1
+    local jenkins_home="${PROJECT_DIR}/ci_home"
+    case "${subcmd}" in
+        init-pwd )
+            cat "${jenkins_home}/secrets/initialAdminPassword"
+            ;;
+        * )
+            subcmd_not_found "${subcmd}" "$@"
+            ;;
+    esac
+}
+
+function cmd_key () {
+    local subcmd="${1}"
+    shift 1
+    local dir="${ETC_DIR}/keys"
+    case "${subcmd}" in
+        gen )
+            if [ -f "${dir}/key" ] || [ -f "${dir}/key.pub" ]; then
+                mkdir -p "${dir}/backup/${TIMESTAMP}"
+                mv "${dir}"/key* "${dir}/backup/${TIMESTAMP}/"
+            elif [ ! -d "${dir}" ]; then
+                mkdir -p "${dir}"
+            fi
+            ssh-keygen -t rsa -f "${dir}/key" \
+                -N "" -C "random@${TIMESTAMP}"
+            ;;
+        * )
+            subcmd_not_found "${subcmd}" "$@"
+            ;;
+    esac
+}
+
+function cmd_tf () {
+    cd "${ETC_DIR}/terraform"
+    local subcmd="${1}"
+    shift 1
+    if $(is_nocolour); then
+        terraform "${subcmd}" -no-color "$@"
+    else
+        terraform "${subcmd}" "$@"
+    fi
+}
+
+function cmd_conn () {
+    local user="ubuntu"
+    local machine="${1}"
+    local machine_ip=$(\
+        grep "^ckb-ci-${machine} " "${ETC_DIR}/ansible/hosts" \
+        | tail -1 \
+        | awk -F"=" '{ print $NF }'
+    )
+    if [ -z "${machine_ip}" ]; then
+        echo "[Error] the machine is not existed in ansible hosts."
+        exit 1
+    fi
+    local ssh_opts="-i ${ETC_DIR}/keys/key"
+    ssh_opts="${ssh_opts} -o StrictHostKeyChecking=no"
+    ssh_opts="${ssh_opts} -o UserKnownHostsFile=/dev/null"
+    if [[ "${machine}" =~ ^bastion ]]; then
+        ssh ${ssh_opts} "${user}@${machine_ip}"
+    else
+        local bastion_ip=$(\
+            grep "^ckb-ci-bastion-" "${ETC_DIR}/ansible/hosts" \
+            | head -1 \
+            | awk -F"=" '{ print $NF }'
+        )
+        ssh ${ssh_opts} \
+            -o ProxyCommand="ssh -q -x -W %h:%p -i '${ETC_DIR}/keys/key' '${user}@${bastion_ip}'" \
+            "${user}@${machine_ip}"
+    fi
+}
+
+function cmd_ans () {
+    local subcmd="${1}"
+    shift 1
+    cd "${ETC_DIR}/ansible"
+    case "${subcmd}" in
+        play )
+            ANSIBLE_NOCOLOR=$(is_nocolour) \
+                ansible-playbook playbook.yaml "$@"
+            ;;
+        * )
+            ANSIBLE_NOCOLOR=$(is_nocolour) \
+                ansible "${subcmd}" "$@"
+            ;;
+    esac
+}
+
+function main () {
+    local command="${1}"
+    shift 1
+    if [ "${command}" = "jenkins" ]; then
+        command="jks"
+    elif [ "${command}" = "terraform" ]; then
+        command="tf"
+    elif [ "${command}" = "ansible" ]; then
+        command="ans"
+    fi
+    case "${command}" in
+        env | jks | key | tf | conn | ans )
+            cmd_${command} "$@"
+            ;;
+        free )
+            cmd_tf destroy -auto-approve
+            ;;
+        bench )
+            local component="${1}"
+            shift 1
+            case "${component}" in
+                init )
+                    cmd_key gen
+                    cmd_tf init
+                    cmd_tf plan
+                    cmd_tf apply -auto-approve
+                    cmd_tf output ansible_hosts > "${ETC_DIR}/ansible/hosts"
+                    ;;
+                setup )
+                    cmd_ans play --limit bastions --tags common
+                    cmd_ans play --limit instances --tags common
+
+                    cmd_ans play --limit bastions  --tags "install_deps,build_all"
+                    cmd_ans play --limit instances --tags "stop_ckb"
+                    cmd_ans play --tags "clean_data"
+                    cmd_ans play --limit instances --tags "install_ckb,configure_ckb"
+                    cmd_ans play --limit bastions  --tags "configure_ckb_bench"
+                    ;;
+                prepare )
+                    cmd_ans play --limit bootnodes --tags "start_ckb"
+                    cmd_ans play --limit bastions  --tags "run_ckb_bench_prepare_data"
+                    cmd_ans play --limit instances --tags "start_ckb"
+                    ;;
+                run )
+                    cmd_ans play --limit bastions  --tags "run_ckb_bench_do_bench"
+                    ;;
+                result )
+                    cmd_ans play --limit bastions  --tags "fetch_ckb_bench_result"
+                    ;;
+                * )
+                    echo "[Error] unknown component [${component}]."
+                    exit 1
+                    ;;
+            esac
+            ;;
+        * )
+            echo "[Error] unknown command [${command}]."
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

@@ -1,0 +1,25 @@
+---
+- hosts: all
+  name: Setup Common Packages
+  roles:
+    - role: common
+      tags: common
+
+- hosts: bastions
+  name: Setup Bastions
+  roles:
+    - role: bastions
+      tags: bastions
+
+- hosts: instances
+  strategy: free
+  name: Setup Instances
+  roles:
+    - role: instances
+      tags: instances
+
+- hosts: bootnodes
+  name: Setup Bootnodes
+  roles:
+    - role: bootnodes
+      tags: bootnodes

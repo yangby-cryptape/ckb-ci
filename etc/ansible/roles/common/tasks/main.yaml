@@ -1,0 +1,51 @@
+- name: Upload Network Tuning Configurations
+  become: true
+  copy:
+    src: files/99-network-tuning.conf
+    dest: "/etc/sysctl.d/"
+    owner: root
+    group: root
+  tags:
+    - tuning_network
+
+- name: Apply Network Tuning Configurations
+  become: true
+  shell: "sysctl -p /etc/sysctl.d/99-network-tuning.conf"
+  tags:
+    - tuning_network
+
+- name: Upload Limits Tuning Configurations
+  become: true
+  copy:
+    src: files/99-limits-tuning.conf
+    dest: "/etc/security/limits.d/"
+    owner: root
+    group: root
+  tags:
+    - tuning_limits
+
+- name: Install Common Tools
+  become: true
+  apt:
+    name:
+      - git
+      - gcc
+      - libc6-dev
+      - pkg-config
+      - libssl-dev
+      - libclang-dev
+      - clang
+      - linux-tools-aws
+    update_cache: true
+
+- name: Create ckb Group
+  become: true
+  group:
+    name: ckb
+
+- name: Create ckb User
+  become: true
+  user:
+    name: ckb
+    group: ckb
+    create_home: false

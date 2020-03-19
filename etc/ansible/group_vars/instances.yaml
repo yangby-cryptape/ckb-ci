@@ -1,0 +1,4 @@
+ansible_ssh_common_args: '-o ProxyCommand="ssh -W %h:%p -i ../keys/key -q ubuntu@{{ hostvars[groups.bastions.0].ansible_host }}"'
+build_machine_ip: "10.0.1.10"
+bootnode_peer_ids:
+  - "QmWVjTnpg4ZZvbaabeW9cbRCcC1PR9YtYit6qTPAZo8G7K"

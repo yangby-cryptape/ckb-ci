@@ -1,0 +1,5 @@
+checkouts_dir: /home/ubuntu/checkouts
+ckb_run_dir: /var/lib/ckb
+block_assembler_account:
+  key: "98400f6a67af07025f5959af35ed653d649f745b8f54bf3f07bef9bd605ee946"
+  arg: "8883a512ee2383c01574a328f60eeccbb4d78240"

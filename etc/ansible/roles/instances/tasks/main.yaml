@@ -1,0 +1,192 @@
+- name: Configure Logrotate for CKB
+  become: true
+  template:
+    src: templates/ckb.logrotate.j2
+    dest: /etc/logrotate.d/ckb
+  tags:
+    - configure_ckb
+
+- name: Stop CKB Service
+  become: true
+  service:
+    name: ckb.service
+    state: stopped
+  ignore_errors: true
+  tags:
+    - stop_ckb
+
+- name: Download CKB Binary File
+  register: download_ckb
+  shell: |
+    scp -i ~/.ssh/key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        {{ build_machine_ip }}:{{ checkouts_dir }}/ckb/target/release/ckb /tmp/ckb
+  tags:
+    - install_ckb
+
+- name: Install CKB Binary
+  become: true
+  copy:
+    remote_src: true
+    src: /tmp/ckb
+    dest: /usr/local/bin/ckb
+    owner: root
+    group: root
+    mode: 0755
+  when: download_ckb is succeeded
+  tags:
+    - install_ckb
+
+- name: Download CKB Service File
+  register: download_ckb_service
+  shell: |
+    scp -i ~/.ssh/key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        {{ build_machine_ip }}:{{ checkouts_dir }}/ckb/devtools/init/linux-systemd/ckb.service /tmp/ckb.service
+  tags:
+    - install_ckb
+
+- name: Install CKB Service
+  become: true
+  copy:
+    remote_src: true
+    src: /tmp/ckb.service
+    dest: /etc/systemd/system/ckb.service
+    owner: root
+    group: root
+    mode: 0644
+  when: download_ckb_service is succeeded
+  tags:
+    - install_ckb
+
+- name: Create CKB Working Directory
+  become: true
+  register: create_ckb_workdir
+  file:
+    path: "{{ ckb_run_dir }}"
+    state: directory
+    owner: ckb
+    group: ckb
+    mode: 0755
+  tags:
+    - configure_ckb
+
+- name: Initialize CKB Working Directory
+  become: true
+  register: initialize_ckb_workdir
+  shell: "ckb init --ba-arg 0x{{ block_assembler_account.arg }} -C . --chain dev --force"
+  when: create_ckb_workdir is succeeded
+  args:
+    chdir: "{{ ckb_run_dir }}"
+  tags:
+    - configure_ckb
+
+- name: Clean CKB Working Directory
+  become: true
+  file:
+    path: "{{ ckb_run_dir }}/data"
+    state: absent
+  tags:
+    - clean_ckb_data
+    - clean_data
+
+- name: Change Ownership of Files in CKB Working Directory
+  become: true
+  register: update_ownership_of_ckb_workdir
+  file:
+    path: "{{ ckb_run_dir }}"
+    state: directory
+    recurse: yes
+    owner: ckb
+    group: ckb
+  when: initialize_ckb_workdir is succeeded
+  tags:
+    - configure_ckb
+
+- name: Configure CKB - Disable Log To Stdout
+  become: true
+  replace:
+    path: "{{ ckb_run_dir }}/ckb.toml"
+    regexp: '^log_to_stdout[ ]*=.*$'
+    replace: 'log_to_stdout = false'
+  tags:
+    - configure_ckb
+
+- name: Configure CKB - Set Bootnodes
+  become: true
+  replace:
+    path: "{{ ckb_run_dir }}/ckb.toml"
+    regexp: '^bootnodes[ ]*= \[\]$'
+    replace: 'bootnodes = ["/ip4/{{ hostvars[groups.bootnodes.0].ansible_host }}/tcp/8115/p2p/{{ bootnode_peer_ids.0 }}"]'
+  tags:
+    - configure_ckb
+
+- name: Configure CKB - Listen All IPs
+  become: true
+  replace:
+    path: "{{ ckb_run_dir }}/ckb.toml"
+    regexp: '^listen_address[ ]*=.*$'
+    replace: 'listen_address = "0.0.0.0:8114"'
+  tags:
+    - configure_ckb
+
+- name: Configure CKB - Increase Max Memory Size
+  become: true
+  replace:
+    path: "{{ ckb_run_dir }}/ckb.toml"
+    regexp: '^max_mem_size[ ]*=.*$'
+    replace: 'max_mem_size = 40_000_000'
+  tags:
+    - configure_ckb
+
+- name: Configure CKB - Increase Max Cycles
+  become: true
+  replace:
+    path: "{{ ckb_run_dir }}/ckb.toml"
+    regexp: '^max_cycles[ ]*=.*$'
+    replace: 'max_cycles = 400_000_000_000'
+  tags:
+    - configure_ckb
+
+- name: Configure CKB - No Fee Rate
+  become: true
+  replace:
+    path: "{{ ckb_run_dir }}/ckb.toml"
+    regexp: '^min_fee_rate[ ]*=.*$'
+    replace: 'min_fee_rate = 0'
+  tags:
+    - configure_ckb
+
+- name: Configure CKB - Increase Max Block Cycles
+  become: true
+  replace:
+    path: "{{ ckb_run_dir }}/specs/dev.toml"
+    regexp: '^max_block_cycles[ ]*=.*$'
+    replace: 'max_block_cycles = 100_000_000_000'
+  tags:
+    - configure_ckb
+
+- name: Configure CKB - Increase Initial Primary Epoch Reward
+  become: true
+  replace:
+    path: "{{ ckb_run_dir }}/specs/dev.toml"
+    regexp: '^initial_primary_epoch_reward[ ]*=.*$'
+    replace: 'initial_primary_epoch_reward = 11_917_808_21917808'
+  tags:
+    - configure_ckb
+
+- name: Configure CKB - TimeoutStopSec
+  become: true
+  replace:
+    path: "/etc/systemd/system/ckb.service"
+    regexp: '^TimeoutStopSec=[0-9]*s$'
+    replace: 'TimeoutStopSec=60s'
+  tags:
+    - configure_ckb
+
+- name: Start CKB Service
+  become: true
+  service:
+    name: ckb.service
+    daemon_reload: yes
+    state: started
+  tags:
+    - start_ckb

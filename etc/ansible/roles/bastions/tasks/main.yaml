@@ -1,0 +1,170 @@
+- name: Download Rustup Installer
+  get_url:
+    url: https://sh.rustup.rs
+    dest: /tmp/rustup-init.sh
+    mode: 0755
+  tags:
+    - install_deps
+    - install_rust
+
+- name: Run Rustup Installer
+  shell: sh /tmp/rustup-init.sh -y
+  tags:
+    - install_deps
+    - install_rust
+
+- name: Checkout CKB
+  register: checkout_ckb
+  git:
+    repo: "https://github.com/{{ ckb_ghrepo }}"
+    dest: "{{ checkouts_dir }}/ckb"
+    version: "{{ ckb_version }}"
+  tags:
+    - build_all
+    - build_ckb
+
+- name: Configure CKB - TWO_IN_TWO_OUT_COUNT
+  replace:
+    path: "{{ checkouts_dir }}/ckb/spec/src/consensus.rs"
+    regexp: '^const TWO_IN_TWO_OUT_COUNT: u64 = .*;$'
+    replace: 'const TWO_IN_TWO_OUT_COUNT: u64 = 8_000;'
+  tags:
+    - build_all
+    - build_ckb
+
+- name: Configure CKB - MAX_BLOCK_PROPOSALS_LIMIT
+  replace:
+    path: "{{ checkouts_dir }}/ckb/spec/src/consensus.rs"
+    regexp: '^const MAX_BLOCK_PROPOSALS_LIMIT: u64 = .*;$'
+    replace: 'const MAX_BLOCK_PROPOSALS_LIMIT: u64 = 12_000;'
+  tags:
+    - build_all
+    - build_ckb
+
+- name: Build CKB
+  shell: bash -lc "make prod"
+  when: checkout_ckb is succeeded
+  args:
+    chdir: "{{ checkouts_dir }}/ckb"
+  async: 3600
+  poll: 15
+  tags:
+    - build_all
+    - build_ckb
+
+- name: Checkout CKB-Bench
+  register: checkout_ckb_bench
+  git:
+    repo: https://github.com/nervosnetwork/ckb-bench
+    dest: "{{ checkouts_dir }}/ckb-bench"
+    version: "{{ ckb_bench_version }}"
+  tags:
+    - build_all
+    - build_ckb_bench
+
+- name: Patch CKB Bench - Replace 'burn' by 'issue'
+  replace:
+    path: "{{ checkouts_dir }}/ckb-bench/bench/src/bench.rs"
+    regexp: '^([ ]+)burn(\(.*\))$'
+    replace: '\1issue\2'
+  tags:
+    - build_all
+    - build_ckb_bench
+
+- name: Build CKB-Bench
+  shell: bash -lc "cargo build --release"
+  when: checkout_ckb_bench is succeeded
+  args:
+    chdir: "{{ checkouts_dir }}/ckb-bench/bench"
+  tags:
+    - build_all
+    - build_ckb_bench
+
+- name: Initialize CKB-Bench Configurations
+  copy:
+    remote_src: true
+    src: "{{ checkouts_dir }}/ckb-bench/bench/example/bench_single_{{ bench_type }}.toml"
+    dest: "{{ checkouts_dir }}/ckb-bench/bench/config.toml"
+  tags:
+    - configure_ckb_bench
+
+- name: Clean CKB Bench Working Directory
+  become: true
+  file:
+    path: "{{ checkouts_dir }}/ckb-bench/bench/data"
+    state: absent
+  tags:
+    - clean_ckb_bench_data
+    - clean_data
+
+- name: Configure CKB-Bench - Private Key for bank
+  replace:
+    path: "{{ checkouts_dir }}/ckb-bench/bench/config.toml"
+    regexp: '^bank[ ]*=[ ]*".*"$'
+    replace: 'bank = "{{ block_assembler_account.key }}"'
+  tags:
+    - configure_ckb_bench
+
+- name: Configure CKB-Bench - Private Key for alice
+  replace:
+    path: "{{ checkouts_dir }}/ckb-bench/bench/config.toml"
+    regexp: '^alice[ ]*=[ ]*".*"$'
+    replace: 'alice= "{{ block_assembler_account.key }}"'
+  tags:
+    - configure_ckb_bench
+
+- name: Configure CKB-Bench - RPC URL
+  replace:
+    path: "{{ checkouts_dir }}/ckb-bench/bench/config.toml"
+    regexp: '^rpc_url[ ]*=[ ]*".*"$'
+    replace: 'rpc_url = "http://{{ hostvars[groups.bootnodes.0].ansible_host }}:8114"'
+  tags:
+    - configure_ckb_bench
+
+- name: Configure CKB-Bench - RPC URLS
+  replace:
+    path: "{{ checkouts_dir }}/ckb-bench/bench/config.toml"
+    regexp: '^rpc_urls[ ]*=[ ]*\[.*\]$'
+    replace: 'rpc_urls = ["http://{{ hostvars[groups.instances.0].ansible_host }}:8114", "http://{{ hostvars[groups.instances.1].ansible_host }}:8114"]'
+  tags:
+    - configure_ckb_bench
+
+- name: Configure CKB-Bench - Disable Log To Stdout
+  replace:
+    path: "{{ checkouts_dir }}/ckb-bench/bench/config.toml"
+    regexp: '^log_to_stdout[ ]*=.*$'
+    replace: 'log_to_stdout = false'
+  tags:
+    - configure_ckb_bench
+
+- name: Run CKB-Bench - Prepare Data x 10000
+  shell: bash -lc "cargo run --release -- --config config.toml mine --blocks 10000"
+  args:
+    chdir: "{{ checkouts_dir }}/ckb-bench/bench"
+  tags:
+    - run_ckb_bench_prepare_data
+    - run_ckb_bench
+
+- name: Run CKB-Bench - Upload the Bench Script
+  copy:
+    src: files/run-bench
+    dest: "{{ checkouts_dir }}/ckb-bench/bench/run-bench"
+    mode: 0755
+  tags:
+    - run_ckb_bench_do_bench
+    - run_ckb_bench
+
+- name: Run CKB-Bench - Do Bench
+  shell: 'bash -lc "./run-bench {{ expected_samples_count }}"'
+  args:
+    chdir: "{{ checkouts_dir }}/ckb-bench/bench"
+  tags:
+    - run_ckb_bench_do_bench
+    - run_ckb_bench
+
+- name: Fetch CKB-Bench Result
+  fetch:
+    src: "{{ checkouts_dir }}/ckb-bench/bench/data/logs/bench.result"
+    dest: ../../bench.result
+  tags:
+    - fetch_ckb_bench_result

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+BENCH_LOG="data/logs/bench.log"
+SLEEP_SECS=10
+
+function log () {
+    printf "$(date +"%Y-%m-%d %H:%M:%S") " >> "data/logs/run-bench.log"
+    echo "$@"                             >> "data/logs/run-bench.log"
+}
+
+function main () {
+    local expected_tps_count=${1}
+    local log_count_old
+    local log_count=0
+    local tps_count
+
+    cargo run --release -- --config config.toml bench >/dev/null 2>&1 &
+
+    while true; do
+        log_count_old=${log_count}
+        log_count=$(wc -l "${BENCH_LOG}" | awk '{ print $1 }')
+        log "[Info ] log count: before ${log_count_old}, current ${log_count}"
+
+        if [ ${log_count_old} -eq ${log_count} ]; then
+            echo "[Error] the program is hanging"
+            exit 1
+        fi
+
+        tps_count=$(grep -c 'ckb-bench\s\+TPS' "${BENCH_LOG}") || true
+        log "[Info TPS samples count: ${tps_count}, expected ${expected_tps_count}"
+
+        if [ ${tps_count} -ge ${expected_tps_count} ]; then
+            echo "[Info ] the TPS samples (=${tps_count}) is enough (>=${expected_tps_count})"
+            break
+        fi
+
+        sleep ${SLEEP_SECS}
+    done
+
+    grep 'ckb-bench\s\+TPS' "${BENCH_LOG}" > "data/logs/bench.result"
+}
+
+main "$@"

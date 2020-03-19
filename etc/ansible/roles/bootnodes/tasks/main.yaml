@@ -1,0 +1,18 @@
+- name: Configure CKB - Set Bootnodes
+  become: true
+  replace:
+    path: "{{ ckb_run_dir }}/ckb.toml"
+    regexp: '^bootnodes[ ]*= \[.*\]$'
+    replace: 'bootnodes = []'
+  tags:
+    - configure_ckb
+
+- name: Setup Key for Bootnodes
+  become: true
+  copy:
+    src: files/secret_key
+    dest: "{{ ckb_run_dir }}/data/network/"
+    owner: ckb
+    group: ckb
+  tags:
+    - configure_ckb

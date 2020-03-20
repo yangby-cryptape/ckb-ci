@@ -110,6 +110,15 @@
   tags:
     - configure_ckb
 
+- name: Configure CKB - Set Logger Filter
+  become: true
+  replace:
+    path: "{{ ckb_run_dir }}/ckb.toml"
+    regexp: '^filter[ ]*=[ ]*".*"$'
+    replace: 'filter = "{{ ckb_logger_filter }}"'
+  tags:
+    - configure_ckb
+
 - name: Configure CKB - Set Bootnodes
   become: true
   replace:
@@ -190,3 +199,11 @@
     state: started
   tags:
     - start_ckb
+
+- name: Fetch CKB Logs
+  become: true
+  fetch:
+    src: "{{ ckb_run_dir }}/data/logs/run.log"
+    dest: ../../ckb-logs
+  tags:
+    - fetch_ckb_logs

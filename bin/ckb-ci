@@ -230,6 +230,9 @@ function main () {
                 result )
                     cmd_ans play --limit bastions  --tags "fetch_ckb_bench_result"
                     ;;
+                logs )
+                    cmd_ans play --limit instances --tags "fetch_ckb_logs"
+                    ;;
                 * )
                     echo "[Error] unknown component [${component}]."
                     exit 1

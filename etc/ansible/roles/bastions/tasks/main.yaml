@@ -16,7 +16,7 @@
 - name: Checkout CKB
   register: checkout_ckb
   git:
-    repo: "https://github.com/{{ ckb_ghrepo }}"
+    repo: "{{ ckb_ghrepo }}"
     dest: "{{ checkouts_dir }}/ckb"
     version: "{{ ckb_version }}"
   tags:

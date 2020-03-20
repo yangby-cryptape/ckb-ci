@@ -31,8 +31,8 @@ function main () {
     if [ -n "${ghprbActualCommit}" ]; then
         CKB_VERSION="${ghprbActualCommit}"
     fi
-    if [ -n "${ghprbGhRepository}" ]; then
-        CKB_GHREPO="${ghprbGhRepository}"
+    if [ -n "${ghprbAuthorRepoGitUrl}" ]; then
+        CKB_GHREPO="${ghprbAuthorRepoGitUrl}"
     fi
 
     # example: branch-name, tag, commit-id

@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+currdir="$(pwd)"
+
+test_id=$(date +"it24x7-%Y%m%d-%H%M%S")
+workdir="${currdir}/${test_id}"
+logsdir="${currdir}/logs"
+
+repo_dir="${currdir}/repo"
+repo_giturl="https://github.com/nervosnetwork/ckb.git"
+repo_branch="develop"
+
+logfile="${workdir}/integration.log"
+rust_log="info,ckb-test=debug,ckb-network=error"
+
+sentry_tag="test-type:it-24x7"
+ckb_version="unknown"
+exit_code=250
+
+export RUST_BACKTRACE=full
+export CKB_INTEGRATION_FAILURE_FILE="${workdir}/integration.err"
+
+# Set SENTRY_DSN
+source "${0}.env"
+
+function log () {
+    printf "[$(date +"%Y-%m-%d %H:%M:%S")] >>> "
+    echo "$@"
+}
+
+function title () {
+    local line=">>>>    >>>>    >>>>    >>>>    >>>>    >>>>    >>>>    >>>>    >>>>    >>>>"
+    echo "${line}"
+    echo
+    printf "[$(date +"%Y-%m-%d %H:%M:%S")] *** "
+    echo -n "$@"
+    printf " ***"
+    echo
+    echo
+    echo "${line}"
+}
+
+function exit_func () {
+    set +euo pipefail
+    mv /tmp/.tmp* "${workdir}/"
+    if [ "${exit_code}" -ne 0 ]; then
+        if [ ! -d "${logsdir}" ]; then
+            mkdir -p "${logsdir}"
+        fi
+        cd "${workdir}/.."
+        7z a -t7z "${test_id}.7z" "${test_id}"
+        mv "${test_id}.7z" "${logsdir}/"
+        while read line; do
+            sentry-cli send-event \
+                --level error \
+                --release "${ckb_version}" \
+                --message "${line}" \
+                --tag "${sentry_tag}" \
+                --user "test-id:${test_id}" \
+                --logfile "${logfile}"
+        done < "${CKB_INTEGRATION_FAILURE_FILE}"
+    else
+        sentry-cli send-event \
+            --level info \
+            --release "${ckb_version}" \
+            --message "Success: All Integration Tests Passed" \
+            --tag "${sentry_tag}" \
+            --user "test-id:${test_id}"
+    fi
+    rm -rf "${workdir}"
+}
+
+trap exit_func EXIT
+
+function main () {
+    title "Starting Integration Tests"
+    rm -rf /tmp/.tmp*
+
+    if [ ! -d "${repo_dir}" ]; then
+        log "Clone the CKB repository ..."
+        git clone "${repo_giturl}" "${repo_dir}"
+        cd "${repo_dir}"
+    else
+        log "Update the CKB repository ..."
+        cd "${repo_dir}"
+        git fetch origin
+    fi
+
+    log "Reset the CKB repository ..."
+    git reset --hard
+    git submodule foreach --recursive git reset --hard
+    git checkout "origin/${repo_branch}"
+    ckb_version=$(git rev-parse HEAD | cut -c -7)
+    log "Current CKB version is #${ckb_version} ..."
+    git submodule update --init --recursive
+
+    log "Build CKB ..."
+    source "${HOME}/.cargo/env"
+    cargo build --release --features deadlock_detection
+
+    log "Initialize the CKB Integration Tests ..."
+    if [ -f "test/Cargo.lock" ]; then
+        rm test/Cargo.lock
+    fi
+    cp Cargo.lock test/Cargo.lock
+    if [ ! -d "test/target" ]; then
+        cp -r target test/target
+    fi
+
+    log "Build CKB Integration Tests ..."
+    cd test
+    cargo build --release
+
+    log "Run CKB Integration Tests ..."
+    local ckb_test_bin="${repo_dir}/test/target/release/ckb-test"
+    local ckb_bin="${repo_dir}/target/release/ckb"
+    ckb_version="$("${ckb_bin}" --version)"
+    if [ -d "${workdir}" ]; then
+        rm -rf "${workdir}"
+    fi
+    mkdir "${workdir}"
+    echo "Failure: Unknown Integration Test Error" \
+        > "${CKB_INTEGRATION_FAILURE_FILE}"
+    log "Integration Test ID: ${test_id}" > "${logfile}"
+    set +euo pipefail
+    RUST_LOG="${rust_log}" \
+        "${ckb_test_bin}" -c 1 --max-time 900 --no-fail-fast \
+            --bin "${ckb_bin}" 2>&1 \
+        | tee -a "${logfile}"
+    exit_code="${PIPESTATUS[0]}"
+    log "Integration Test Exit Code: ${exit_code}" >> "${logfile}"
+
+    title "Finished Integration Tests"
+    exit "${exit_code}"
+}
+
+main "$@"

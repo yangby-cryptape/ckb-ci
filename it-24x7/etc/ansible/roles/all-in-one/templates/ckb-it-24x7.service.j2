@@ -1,0 +1,21 @@
+[Unit]
+Description=Nervos CKB Integration Tests 24x7
+After=network-online.target
+Wants=network-online.target systemd-networkd-wait-online.service
+
+[Service]
+WorkingDirectory={{ ckb_it_24x7_dir }}
+ExecStart={{ ckb_it_24x7_entry }}
+Restart=always
+KillMode=mixed
+TimeoutStopSec=60s
+User=ckb
+Group=ckb
+# Ref: https://stackoverflow.com/questions/37585758/how-to-redirect-output-of-systemd-service-to-a-file/48052152#48052152
+#StandardOutput=append:{{ ckb_it_24x7_dir }}/logs/out.log
+#StandardError=append:{{ ckb_it_24x7_dir }}/logs/err.log
+LimitNOFILE=1048576
+LimitNPROC=512
+
+[Install]
+WantedBy=multi-user.target

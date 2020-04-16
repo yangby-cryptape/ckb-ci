@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR=$(dirname "$0")
+PROJECT_DIR=$(cd "${SCRIPT_DIR}/.."; pwd)
+
+ETC_DIR="${PROJECT_DIR}/etc"
+ANSIBLE_HOME="${ETC_DIR}/ansible"
+
+PREFIX="ckb-ci-it-24x7"
+CTL_DOCKER="nervosnetwork/${PREFIX}-ctl:local-env"
+CTL_DOCKER_NAME="${PREFIX}-ctl-docker"
+
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+
+function is_nocolour() {
+    if [ "${CKB_CI_NOCOLOR:-false}" = "true" ]; then
+        printf true
+    else
+        printf false
+    fi
+}
+
+function subcmd_not_found () {
+    local script="${0}"
+    local command="${FUNCNAME[1]#cmd_}"
+    local subcmd="${1}"
+    echo "[Error] unknown sub-command [${subcmd}] for [${command}]: \`${script} ${command} $*\`."
+    exit 1
+}
+
+function component_not_found () {
+    local script="${0}"
+    local command="${FUNCNAME[1]#cmd_}"
+    local subcmd="${1}"
+    local component="${2}"
+    echo "[Error] unknown component [${component}] for [${command}::${subcmd}]: \`${script} ${command} $*\`."
+    exit 1
+}
+
+function cmd_ctl () {
+    local subcmd="${1}"
+    shift 1
+    local is_existed=$(docker image ls -q ${CTL_DOCKER}  | wc -l)
+    local ansible_home="${ANSIBLE_HOME}"
+    case "${subcmd}" in
+        env )
+            local component="${1:-}"
+            shift 1
+            case "${component}" in
+                build )
+                    if [ ${is_existed} -gt 0 ]; then
+                        echo "[Error] the docker [${CTL_DOCKER}] is existed."
+                        exit 1
+                    fi
+                    cd "${ETC_DIR}/docker"
+                    docker build --rm \
+                        --build-arg ansible_uid=$(id -u) \
+                        --build-arg ansible_gid=$(id -g) \
+                        -t "${CTL_DOCKER}" .
+                    ;;
+                remove )
+                    docker rmi "${CTL_DOCKER}"
+                    ;;
+                * )
+                    component_not_found "${subcmd}" "${component}" "$@"
+                    ;;
+            esac
+            ;;
+        set-remote )
+            local user="${1}"
+            local ip="${2}"
+            local keyfile="${3}"
+            local sentry_dsn="${4}"
+            sed -i "s/^\(remote_user = \).*$/\1${user}/g" \
+                "${ansible_home}/ansible.cfg"
+            cp -fv "${keyfile}" "${ansible_home}/key"
+            cat > "${ansible_home}/hosts" <<EOF
+[server]
+ckb-it-24x7             ansible_host=${ip}
+EOF
+            cat > "${ansible_home}/env" <<EOF
+export SENTRY_DSN="${sentry_dsn}"
+EOF
+            ;;
+        clean )
+            sed -i "s/^\(remote_user = \).*$/\1REMOTE_USER/g" \
+                "${ansible_home}/ansible.cfg"
+            rm -fv "${ansible_home}/hosts" "${ansible_home}/key" "${ansible_home}/env"
+            ;;
+        * )
+            subcmd_not_found "${subcmd}" "$@"
+            ;;
+    esac
+}
+
+function cmd_conn () {
+    local prefix="${PREFIX}"
+    local user="ubuntu"
+    local machine_ip=$(\
+        grep "^ckb-it-24x7 " "${ANSIBLE_HOME}/hosts" \
+        | tail -1 \
+        | awk -F"=" '{ print $NF }'
+    )
+    if [ -z "${machine_ip}" ]; then
+        echo "[Error] the machine is not existed in ansible hosts."
+        exit 1
+    fi
+    local ssh_opts="-i ${ANSIBLE_HOME}/key"
+    ssh_opts="${ssh_opts} -o StrictHostKeyChecking=no"
+    ssh_opts="${ssh_opts} -o UserKnownHostsFile=/dev/null"
+    ssh ${ssh_opts} "${user}@${machine_ip}"
+}
+
+function cmd_exec () {
+    local ansible_home="${ANSIBLE_HOME}"
+    if [ ! -d "${ansible_home}" ]; then
+        mkdir -p "${ansible_home}"
+    fi
+    docker run -it --rm \
+        --name "${CTL_DOCKER_NAME}" \
+        -h "${CTL_DOCKER_NAME}" \
+        -e ANSIBLE_NOCOLOR=$(is_nocolour) \
+        -w /mnt/workdir \
+        -v "${ansible_home}:/mnt/workdir" \
+        "${CTL_DOCKER}" \
+        "$@"
+}
+function cmd_ans () {
+    local subcmd="${1}"
+    shift 1
+    case "${subcmd}" in
+        play )
+            cmd_exec ansible-playbook playbook.yaml "$@"
+            ;;
+        * )
+            cmd_exec ansible "${subcmd}" "$@"
+            ;;
+    esac
+}
+
+function main () {
+    local command="${1}"
+    shift 1
+    if [ "${command}" = "ansible" ]; then
+        command="ans"
+    fi
+    case "${command}" in
+        ctl | conn | exec | ans )
+            cmd_${command} "$@"
+            ;;
+        setup )
+            cmd_ctl set-remote "$@"
+            ;;
+        deploy )
+            cmd_ans play --limit server --tags setup_system
+            cmd_ans play --limit server --tags install_deps
+            cmd_ans play --limit server --tags install_service
+            ;;
+        clean )
+            cmd_ctl clean
+            ;;
+        * )
+            echo "[Error] unknown command [${command}]."
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

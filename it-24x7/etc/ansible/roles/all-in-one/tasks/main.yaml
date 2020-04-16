@@ -1,0 +1,192 @@
+- name: Upload Network Tuning Configurations
+  become: true
+  copy:
+    src: files/99-network-tuning.conf
+    dest: "/etc/sysctl.d/"
+    owner: root
+    group: root
+  tags:
+    - setup_system
+    - tuning_network
+
+- name: Apply Network Tuning Configurations
+  become: true
+  shell: "sysctl -p /etc/sysctl.d/99-network-tuning.conf"
+  tags:
+    - setup_system
+    - tuning_network
+
+- name: Upload Limits Tuning Configurations
+  become: true
+  copy:
+    src: files/99-limits-tuning.conf
+    dest: "/etc/security/limits.d/"
+    owner: root
+    group: root
+  tags:
+    - setup_system
+    - tuning_limits
+
+- name: Create ckb Group
+  become: true
+  group:
+    name: ckb
+  tags:
+    - setup_system
+    - create_user
+
+- name: Create ckb User
+  become: true
+  user:
+    name: ckb
+    group: ckb
+    create_home: true
+    shell: /bin/bash
+  tags:
+    - setup_system
+    - create_user
+
+- name: Install Common Tools
+  become: true
+  apt:
+    name:
+      - git
+      - gcc
+      - libc6-dev
+      - pkg-config
+      - libssl-dev
+      - libclang-dev
+      - clang
+      - linux-tools-aws
+      - p7zip-full
+    update_cache: true
+  tags:
+    - install_deps
+    - install_syspkgs
+
+- name: Download Rustup Installer
+  become: true
+  become_user: ckb
+  get_url:
+    url: https://sh.rustup.rs
+    dest: /tmp/rustup-init.sh
+    mode: 0755
+  tags:
+    - install_deps
+    - install_rust
+
+- name: Run Rustup Installer
+  become: true
+  become_user: ckb
+  shell: sh /tmp/rustup-init.sh -y
+  tags:
+    - install_deps
+    - install_rust
+
+- name: Delete Old Sentry
+  become: true
+  file:
+    path: /usr/local/bin/sentry-cli
+    state: absent
+  tags:
+    - install_deps
+    - install_sentry
+
+- name: Download Sentry Installer
+  get_url:
+    url: https://sentry.io/get-cli/
+    dest: /tmp/sentry-installer.sh
+    mode: 0755
+  tags:
+    - install_deps
+    - install_sentry
+
+- name: Run Sentry Installer
+  become: true
+  shell: bash /tmp/sentry-installer.sh
+  tags:
+    - install_deps
+    - install_sentry
+
+- name: Stop CKB Integration Tests Service
+  become: true
+  service:
+    name: ckb-it-24x7.service
+    state: stopped
+  ignore_errors: true
+  tags:
+    - install_service
+    - reinstall_service
+    - stop_service
+
+- name: Configure Logrotate for CKB Integration Tests
+  become: true
+  template:
+    src: templates/ckb-it-24x7.logrotate.j2
+    dest: /etc/logrotate.d/ckb-it-24x7
+  tags:
+    - install_service
+    - reinstall_service
+    - upload_configs
+
+- name: Upload CKB Integration Tests Scripts
+  become: true
+  copy:
+    src: files/ckb-it-24x7
+    dest: "{{ ckb_it_24x7_entry }}"
+    owner: root
+    group: root
+    mode: 0755
+  tags:
+    - install_service
+    - reinstall_service
+    - upload_scripts
+
+- name: Upload CKB Integration Tests Configs
+  become: true
+  copy:
+    src: ../../env
+    dest: "{{ ckb_it_24x7_env }}"
+    owner: root
+    group: root
+    mode: 0644
+  tags:
+    - install_service
+    - reinstall_service
+    - upload_configs
+
+- name: Upload CKB Integration Tests Service
+  become: true
+  template:
+    src: templates/ckb-it-24x7.service.j2
+    dest: /etc/systemd/system/ckb-it-24x7.service
+    owner: root
+    group: root
+    mode: 0755
+  tags:
+    - install_service
+    - reinstall_service
+    - upload_service
+
+- name: Create CKB Working Directory
+  become: true
+  file:
+    path: "{{ ckb_it_24x7_dir }}/logs"
+    state: directory
+    owner: ckb
+    group: ckb
+    mode: 0755
+  tags:
+    - install_service
+    - initialize_service_data
+
+- name: Start CKB Service
+  become: true
+  service:
+    name: ckb-it-24x7.service
+    daemon_reload: yes
+    state: started
+  tags:
+    - install_service
+    - reinstall_service
+    - start_service

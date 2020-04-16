@@ -1,0 +1,6 @@
+---
+- hosts: all
+  name: Setup a 24*7 Server for Running CKB Integration Tests
+  roles:
+    - role: all-in-one
+      tags: all-in-one

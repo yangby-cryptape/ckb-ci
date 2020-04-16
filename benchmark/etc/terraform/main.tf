@@ -216,14 +216,14 @@ output "ansible_hosts" {
   value = <<EOF
 [bastions]
 ${format(
-  "%-32s ansible_host=%s",
+  "%-60s ansible_host=%s",
   "${var.prefix}-bastion-0",
   aws_instance.bastion.public_ip,
 )}
 
 [bootnodes]
 ${format(
-  "%-32s ansible_host=%s",
+  "%-60s ansible_host=%s",
   "${var.prefix}-bootnode-0",
   aws_instance.bootnode.private_ip,
 )}
@@ -232,13 +232,13 @@ ${format(
 ${join(
   "\n",
   formatlist(
-    "%-32s ansible_host=%s",
+    "%-60s ansible_host=%s",
     aws_instance.instance.*.tags.Name,
     aws_instance.instance.*.private_ip,
   ),
 )}
 ${format(
-  "%-32s ansible_host=%s",
+  "%-60s ansible_host=%s",
   "${var.prefix}-bootnode-0",
   aws_instance.bootnode.private_ip,
 )}

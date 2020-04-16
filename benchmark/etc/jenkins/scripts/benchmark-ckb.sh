@@ -77,8 +77,10 @@ function main () {
 
     local terraform_tfvars="etc/terraform/terraform.tfvars"
     local instances_count=$((INSTANCES_COUNT - 1))
+    local prefix="ckb-ci-benchmark-$(echo "${CKB_VERSION}" | cut -c 1-7)"
     echo "access_key      = \"${AWS_ACCESS_KEY}\"" >  "${terraform_tfvars}"
     echo "secret_key      = \"${AWS_SECRET_KEY}\"" >> "${terraform_tfvars}"
+    echo "prefix          = \"${prefix}\""         >> "${terraform_tfvars}"
     echo "instances_count = ${instances_count}"    >> "${terraform_tfvars}"
     echo "instance_type   = \"${INSTANCE_TYPE}\""  >> "${terraform_tfvars}"
 

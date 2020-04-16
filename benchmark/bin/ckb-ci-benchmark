@@ -143,7 +143,7 @@ function cmd_conn () {
     local user="ubuntu"
     local machine="${1}"
     local machine_ip=$(\
-        grep "^${prefix}-${machine} " "${ETC_DIR}/ansible/hosts" \
+        grep "^${prefix}-[^- ]\+-${machine} " "${ETC_DIR}/ansible/hosts" \
         | tail -1 \
         | awk -F"=" '{ print $NF }'
     )
@@ -158,7 +158,7 @@ function cmd_conn () {
         ssh ${ssh_opts} "${user}@${machine_ip}"
     else
         local bastion_ip=$(\
-            grep "^${prefix}-bastion-0 " "${ETC_DIR}/ansible/hosts" \
+            grep "^${prefix}-[^- ]\+-bastion-0 " "${ETC_DIR}/ansible/hosts" \
             | head -1 \
             | awk -F"=" '{ print $NF }'
         )

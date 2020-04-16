@@ -34,7 +34,6 @@ variable "private_key_path" {
 
 variable "prefix" {
   type    = string
-  default = "ckb-ci-benchmark"
 }
 
 variable "region" {

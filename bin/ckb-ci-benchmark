@@ -6,9 +6,11 @@ SCRIPT_DIR=$(dirname "$0")
 PROJECT_DIR=$(cd "${SCRIPT_DIR}/.."; pwd)
 
 ETC_DIR="${PROJECT_DIR}/etc"
+CI_HOME="${PROJECT_DIR}/ci_home"
 
-CI_DOCKER="nervosnetwork/ckb-ci:local-env"
-CI_DOCKER_NAME="ckb-ci-docker"
+PREFIX="ckb-ci-benchmark"
+CI_DOCKER="nervosnetwork/${PREFIX}:local-env"
+CI_DOCKER_NAME="${PREFIX}-docker"
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 
@@ -32,7 +34,7 @@ function cmd_env () {
     local subcmd="${1}"
     shift 1
     local is_existed=$(docker image ls -q ${CI_DOCKER}  | wc -l)
-    local jenkins_home="${PROJECT_DIR}/ci_home"
+    local jenkins_home="${CI_HOME}"
     case "${subcmd}" in
         build )
             if [ ${is_existed} -gt 0 ]; then
@@ -93,7 +95,7 @@ function cmd_env () {
 function cmd_jks () {
     local subcmd="${1}"
     shift 1
-    local jenkins_home="${PROJECT_DIR}/ci_home"
+    local jenkins_home="${CI_HOME}"
     case "${subcmd}" in
         init-pwd )
             cat "${jenkins_home}/secrets/initialAdminPassword"
@@ -137,10 +139,11 @@ function cmd_tf () {
 }
 
 function cmd_conn () {
+    local prefix="${PREFIX}"
     local user="ubuntu"
     local machine="${1}"
     local machine_ip=$(\
-        grep "^ckb-ci-${machine} " "${ETC_DIR}/ansible/hosts" \
+        grep "^${prefix}-${machine} " "${ETC_DIR}/ansible/hosts" \
         | tail -1 \
         | awk -F"=" '{ print $NF }'
     )
@@ -155,7 +158,7 @@ function cmd_conn () {
         ssh ${ssh_opts} "${user}@${machine_ip}"
     else
         local bastion_ip=$(\
-            grep "^ckb-ci-bastion-" "${ETC_DIR}/ansible/hosts" \
+            grep "^${prefix}-bastion-" "${ETC_DIR}/ansible/hosts" \
             | head -1 \
             | awk -F"=" '{ print $NF }'
         )
@@ -198,46 +201,36 @@ function main () {
         free )
             cmd_tf destroy -auto-approve
             ;;
-        bench )
-            local component="${1}"
-            shift 1
-            case "${component}" in
-                init )
-                    cmd_key gen
-                    cmd_tf init
-                    cmd_tf plan
-                    cmd_tf apply -auto-approve
-                    cmd_tf output ansible_hosts > "${ETC_DIR}/ansible/hosts"
-                    ;;
-                setup )
-                    cmd_ans play --limit bastions --tags common
-                    cmd_ans play --limit instances --tags common
+        init )
+            cmd_key gen
+            cmd_tf init
+            cmd_tf plan
+            cmd_tf apply -auto-approve
+            cmd_tf output ansible_hosts > "${ETC_DIR}/ansible/hosts"
+            ;;
+        setup )
+            cmd_ans play --limit bastions --tags common
+            cmd_ans play --limit instances --tags common
 
-                    cmd_ans play --limit bastions  --tags "install_deps,build_all"
-                    cmd_ans play --limit instances --tags "stop_ckb"
-                    cmd_ans play --tags "clean_data"
-                    cmd_ans play --limit instances --tags "install_ckb,configure_ckb"
-                    cmd_ans play --limit bastions  --tags "configure_ckb_bench"
-                    ;;
-                prepare )
-                    cmd_ans play --limit bootnodes --tags "start_ckb"
-                    cmd_ans play --limit bastions  --tags "run_ckb_bench_prepare_data"
-                    cmd_ans play --limit instances --tags "start_ckb"
-                    ;;
-                run )
-                    cmd_ans play --limit bastions  --tags "run_ckb_bench_do_bench"
-                    ;;
-                result )
-                    cmd_ans play --limit bastions  --tags "fetch_ckb_bench_result"
-                    ;;
-                logs )
-                    cmd_ans play --limit instances --tags "fetch_ckb_logs"
-                    ;;
-                * )
-                    echo "[Error] unknown component [${component}]."
-                    exit 1
-                    ;;
-            esac
+            cmd_ans play --limit bastions  --tags "install_deps,build_all"
+            cmd_ans play --limit instances --tags "stop_ckb"
+            cmd_ans play --tags "clean_data"
+            cmd_ans play --limit instances --tags "install_ckb,configure_ckb"
+            cmd_ans play --limit bastions  --tags "configure_ckb_bench"
+            ;;
+        prepare )
+            cmd_ans play --limit bootnodes --tags "start_ckb"
+            cmd_ans play --limit bastions  --tags "run_ckb_bench_prepare_data"
+            cmd_ans play --limit instances --tags "start_ckb"
+            ;;
+        run )
+            cmd_ans play --limit bastions  --tags "run_ckb_bench_do_bench"
+            ;;
+        result )
+            cmd_ans play --limit bastions  --tags "fetch_ckb_bench_result"
+            ;;
+        logs )
+            cmd_ans play --limit instances --tags "fetch_ckb_logs"
             ;;
         * )
             echo "[Error] unknown command [${command}]."

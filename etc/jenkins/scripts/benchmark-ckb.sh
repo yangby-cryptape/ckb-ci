@@ -6,6 +6,7 @@ currdir="$(pwd)"
 workdir="${currdir}/workdir"
 
 HAS_LOGS=false
+EXECUTABLE="./bin/ckb-ci-benchmark"
 
 function github_comment () {
     local message="${1}"
@@ -22,9 +23,9 @@ function exit_func () {
     if [ -d "${workdir}" ]; then
         cd "${workdir}"
         if [ "${HAS_LOGS}" = "true" ]; then
-            ./bin/ckb-ci bench logs
+            "${EXECUTABLE}" logs
         fi
-        ./bin/ckb-ci free
+        "${EXECUTABLE}" free
         rm etc/terraform/terraform.tfvars
         if [ -d "ckb-logs" ]; then
             local timestamp=$(date +"%Y%m%d%H%M%S")
@@ -81,7 +82,7 @@ function main () {
     echo "instances_count = ${instances_count}"    >> "${terraform_tfvars}"
     echo "instance_type   = \"${INSTANCE_TYPE}\""  >> "${terraform_tfvars}"
 
-    ./bin/ckb-ci bench init
+    "${EXECUTABLE}" init
 
     local ansible_hosts="etc/ansible/hosts"
     echo "[all:vars]"                                       >> "${ansible_hosts}"
@@ -94,13 +95,13 @@ function main () {
     echo "[INFO] Review the ansible hosts file:"
     cat "${ansible_hosts}"
 
-    ./bin/ckb-ci bench setup
+    "${EXECUTABLE}" setup
 
     HAS_LOGS=true
 
-    ./bin/ckb-ci bench prepare
-    ./bin/ckb-ci bench run
-    ./bin/ckb-ci bench result
+    "${EXECUTABLE}" prepare
+    "${EXECUTABLE}" run
+    "${EXECUTABLE}" result
 
     find . -type f -name "bench.result" -exec cat {} \; > result.log
     rm -rf bench.result

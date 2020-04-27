@@ -7,59 +7,9 @@ servers for testing [CKB].
 
 ## Contents
 
-- [Scripts to setup a Jenkins Server for benchmarking CKB.](benchmark/bin/ckb-ci-benchmark)
+- [Scripts to setup a Jenkins Server for benchmarking CKB](benchmark)
 
-  **Requirements: docker**
-
-  - Build a docker, install tools into it then run the Jenkins server.
-
-    ```bash
-    bin/ckb-ci-benchmark env build
-    bin/ckb-ci-benchmark env run
-
-    # Show the initial admin password
-    bin/ckb-ci-benchmark jenkins show-init-pswd
-    ```
-
-  - Then, login Jenkins from a browser, and install two plugins:
-
-    - GitHub Pull Request Builder
-
-      Using [THIS FORK](https://github.com/yangby-cryptape/ghprb-plugin/tree/customized) can prevent asking for testing phrase in pull requests.
-
-    - Credentials Binding
-
-      For all passwords and tokens which are used in the build script.
-
-  - Setup Jenkins and GitHub.
-
-    The details are omitted, please read documents of Jenkins and GitHub.
-
-  - Create a new project and setup it.
-
-    - [Click ME for the build script](benchmark/etc/jenkins/scripts/benchmark-ckb.sh)
-
-- [Scripts to setup a 24\*7 Service for running CKB integration tests continuously.](it-24x7/bin/ckb-ci-it-24x7)
-
-  **Requirements: docker**
-
-  ```bash
-  # Build a docker and install tools into it
-  bin/ckb-ci-it-24x7 env build
-
-  # Set credentials
-  bin/ckb-ci-it-24x7 setup "${REMOTE_USER}" "${REMOTE_HOST}" \
-      "${PATH_TO_THE_SSHKEY}" "${SENTRY_DSN}"
-
-  # Deploy and start the tests
-  bin/ckb-ci-it-24x7 deploy
-
-  # Remove all secret files
-  bin/ckb-ci-it-24x7 clean
-
-  # Remove the docker
-  bin/ckb-ci-it-24x7 env remove
-  ```
+- [Scripts to setup a 24\*7 Service for running CKB integration tests continuously](it-24x7)
 
 [License]: https://img.shields.io/badge/License-Apache--2.0%20OR%20MIT-blue.svg
 

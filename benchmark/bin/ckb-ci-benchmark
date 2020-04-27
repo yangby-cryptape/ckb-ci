@@ -71,9 +71,6 @@ function cmd_env () {
         entry )
             docker exec -it "${CI_DOCKER_NAME}" /bin/bash
             ;;
-        init-pwd )
-            cat "${jenkins_home}/secrets/initialAdminPassword"
-            ;;
         shell )
             docker run -it --rm \
                 --name "${CI_DOCKER_NAME}" \
@@ -97,7 +94,7 @@ function cmd_jks () {
     shift 1
     local jenkins_home="${CI_HOME}"
     case "${subcmd}" in
-        init-pwd )
+        show-init-pswd )
             cat "${jenkins_home}/secrets/initialAdminPassword"
             ;;
         * )
